@@ -1,7 +1,52 @@
 #include <iostream>
+#include <chrono>
 #include "NTL/ZZ.h"
+#include "NTL/ZZ_p.h"
 
 using namespace NTL;
+
+class RSA_Group {
+
+public:
+    int k;
+    ZZ p, q, N, fi;
+
+
+public:
+
+    RSA_Group(const ZZ &p, const ZZ &q) {
+        this->p = p;
+        this->q = q;
+        N = p * q;
+        fi = (p - 1) * (q - 1);
+    }
+
+    ZZ mul(const ZZ &a, const ZZ &b) {
+        return MulMod(a, b, N);
+    }
+
+    ZZ trapdoor(const ZZ &g, uint64_t t) {
+        ZZ two = ZZ(2);
+        ZZ zt = ZZ(t);
+        ZZ e = PowerMod(two, zt, fi);
+        return PowerMod(g, e, N);
+    }
+
+    ZZ sequential(const ZZ &g, uint64_t t) {
+        ZZ y = g;
+        ZZ two = ZZ(2);
+        for (uint64_t i = 0; i < t; i++) {
+            y = PowerMod(y, two, N);
+        }
+        return y;
+    }
+
+    ZZ genproof(const ZZ &g, const ZZ &t, const ZZ &l) {
+        ZZ pow = (2 ^ t) / l;
+        return PowerMod(g, pow, N);
+    }
+
+};
 
 bool isPrime(const ZZ &n, int k) {
 
@@ -31,11 +76,47 @@ bool isPrime(const ZZ &n, int k) {
 }
 
 int main() {
-    int c = 0;
-    for (int i = 2; i < 100000; i++) {
-        ZZ a(i);
-        if (isPrime(a, 100) != isPrime(a, 100)) c++;
-    }
-    std::cout << c << std::endl;
+    int k = 1024;
+    RSA_Group group(RandomPrime_ZZ(k, 50), RandomPrime_ZZ(k, 50));
+    ZZ g = RandomBits_ZZ(k);
+    uint64_t time = 200;
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+
+    std::cout << group.trapdoor(g, time) << std::endl << std::endl;
+
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << ms.count() << std::endl;
+
+    t1 = std::chrono::high_resolution_clock::now();
+
+    ZZ s = group.sequential(g, time);
+
+    std::cout << s << std::endl << std::endl;
+
+    t2 = std::chrono::high_resolution_clock::now();
+    ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << ms.count() << std::endl;
+
+    t1 = std::chrono::high_resolution_clock::now();
+
+    ZZ l = RandomPrime_ZZ(2 * k, 50);
+
+    ZZ pi = group.genproof(g, ZZ(time), l);
+    ZZ r = PowerMod(ZZ(2), ZZ(time), l);
+
+    ZZ first = PowerMod(pi, l, group.N);
+    ZZ second = PowerMod(g, r, group.N);
+    ZZ mul = MulMod(first, second, group.N);
+
+    bool eq = (mul == s);
+
+    std::cout << (eq ? "Verified" : "Failed") << std::endl << std::endl;
+
+    t2 = std::chrono::high_resolution_clock::now();
+    ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
+    std::cout << ms.count() << std::endl;
+
     return 0;
 }
