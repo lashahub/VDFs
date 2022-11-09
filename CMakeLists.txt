@@ -7,7 +7,8 @@ set(SOURCES main.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_include_directories(${PROJECT_NAME} PRIVATE NTL/include)
+target_include_directories(${PROJECT_NAME} PRIVATE bicycl)
 
-add_subdirectory(NTL/src)
-target_link_libraries(${PROJECT_NAME} ntl_lib)
+add_subdirectory(bicycl)
+target_link_libraries(${PROJECT_NAME} ntl)
+target_link_libraries(${PROJECT_NAME} bicycl)

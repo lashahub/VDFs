@@ -1,7 +1,9 @@
 #include <iostream>
+#include <cmath>
 #include <chrono>
 #include "NTL/ZZ.h"
 #include "NTL/ZZ_p.h"
+#include "bicycl.hpp"
 
 using namespace NTL;
 
@@ -21,18 +23,18 @@ public:
         fi = (p - 1) * (q - 1);
     }
 
-    ZZ mul(const ZZ &a, const ZZ &b) {
+    ZZ mul(const ZZ &a, const ZZ &b) const {
         return MulMod(a, b, N);
     }
 
-    ZZ trapdoor(const ZZ &g, uint64_t t) {
+    ZZ trapdoor(const ZZ &g, uint64_t t) const {
         ZZ two = ZZ(2);
         ZZ zt = ZZ(t);
         ZZ e = PowerMod(two, zt, fi);
         return PowerMod(g, e, N);
     }
 
-    ZZ sequential(const ZZ &g, uint64_t t) {
+    ZZ sequential(const ZZ &g, uint64_t t) const {
         ZZ y = g;
         ZZ two = ZZ(2);
         for (uint64_t i = 0; i < t; i++) {
@@ -41,9 +43,33 @@ public:
         return y;
     }
 
-    ZZ genproof(const ZZ &g, const ZZ &t, const ZZ &l) {
+    ZZ genproof(const ZZ &g, const ZZ &t, const ZZ &l) const {
         ZZ pow = (2 ^ t) / l;
         return PowerMod(g, pow, N);
+    }
+
+};
+
+class Class_Group {
+
+public:
+
+    ZZ generateD() {
+        ZZ d = -RandomPrime_ZZ(1024, 50);
+        while (d % 4 != 1) {
+            d = -RandomPrime_ZZ(1024, 50);
+        }
+        return d;
+    }
+
+    ZZ MinkowskiBound() {
+        ZZ delta = SqrRoot(-generateD());
+        ZZ bound = 2 * delta / M_PI;
+        return bound;
+    }
+
+    Class_Group() {
+
     }
 
 };
@@ -76,8 +102,11 @@ bool isPrime(const ZZ &n, int k) {
 }
 
 int main() {
+    std::cout<<"HI"<<std::endl;
     int k = 1024;
+    std::cout<<"HI"<<std::endl;
     RSA_Group group(RandomPrime_ZZ(k, 50), RandomPrime_ZZ(k, 50));
+    std::cout<<"HI"<<std::endl;
     ZZ g = RandomBits_ZZ(k);
     uint64_t time = 200;
 
