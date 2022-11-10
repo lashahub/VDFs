@@ -4,8 +4,34 @@
 #include "NTL/ZZ.h"
 #include "NTL/ZZ_p.h"
 #include "bicycl.hpp"
+#include "XKCP/SimpleFIPS202.h"
+#include "openssl/evp.h"
+#include "openssl/sha.h"
+
+#define NUM_TRIALS 50
 
 using namespace NTL;
+using namespace BICYCL;
+
+ZZ to_int(const std::string &x) {
+    ZZ res;
+    for (char c: x) {
+        res *= 2;
+        res += (c == '1') ? 1 : 0;
+    }
+    return res;
+}
+
+std::string to_bin(ZZ x) {
+    if (x == 0) return "0";
+    std::string res;
+    while (x > 0) {
+        res += (x % 2 == 1) ? '1' : '0';
+        x /= 2;
+    }
+    std::reverse(res.begin(), res.end());
+    return res;
+}
 
 class RSA_Group {
 
@@ -13,18 +39,54 @@ public:
     int k;
     ZZ p, q, N, fi;
 
-
 public:
 
-    RSA_Group(const ZZ &p, const ZZ &q) {
-        this->p = p;
-        this->q = q;
+    RSA_Group(int k) {
+        this->k = k;
+        RandomPrime(this->p, k, NUM_TRIALS);
+        RandomPrime(this->q, k, NUM_TRIALS);
         N = p * q;
         fi = (p - 1) * (q - 1);
     }
 
-    ZZ mul(const ZZ &a, const ZZ &b) const {
-        return MulMod(a, b, N);
+    std::string to_str(uint8_t *start, int length) {
+        std::string res;
+        for (int i = 0; i < length; i++) {
+            uint8_t curr = start[i];
+            std::string s;
+            for (int j = 0; j < 8; j++) {
+                s += (curr % 2 == 1) ? '1' : '0';
+                curr /= 2;
+            }
+            std::reverse(s.begin(), s.end());
+            res += s;
+        }
+        return res;
+    }
+
+    ZZ hash(std::string x) {
+        /*
+        std::string bin = to_bin(x);
+        const char *cstr = bin.c_str();
+        const unsigned char *input = reinterpret_cast<unsigned char *>(const_cast<char *>(cstr));
+        unsigned char output[32 + 1];
+        SHA3_256(output, input, bin.length());
+        output[32] = '\0';
+        return to_int(std::string(reinterpret_cast<char *>(output)));
+         */
+
+        std::string input = "residue" + x;
+        uint32_t digest_length = SHA256_DIGEST_LENGTH;
+        const EVP_MD *algorithm = EVP_sha3_256();
+        auto *digest = static_cast<uint8_t *>(OPENSSL_malloc(digest_length));
+        EVP_MD_CTX *context = EVP_MD_CTX_new();
+        EVP_DigestInit_ex(context, algorithm, nullptr);
+        EVP_DigestUpdate(context, input.c_str(), input.size());
+        EVP_DigestFinal_ex(context, digest, &digest_length);
+        EVP_MD_CTX_destroy(context);
+        std::string output = to_str(digest, digest_length);
+        OPENSSL_free(digest);
+        return to_int(output) % N;
     }
 
     ZZ trapdoor(const ZZ &g, uint64_t t) const {
@@ -34,7 +96,7 @@ public:
         return PowerMod(g, e, N);
     }
 
-    ZZ sequential(const ZZ &g, uint64_t t) const {
+    ZZ eval(const ZZ &g, uint64_t t) const {
         ZZ y = g;
         ZZ two = ZZ(2);
         for (uint64_t i = 0; i < t; i++) {
@@ -43,9 +105,18 @@ public:
         return y;
     }
 
+    ZZ trapdoorproof(const ZZ &g, const ZZ &t, const ZZ &l){
+
+    }
+
     ZZ genproof(const ZZ &g, const ZZ &t, const ZZ &l) const {
         ZZ pow = (2 ^ t) / l;
         return PowerMod(g, pow, N);
+    }
+
+    ZZ hashprime(const ZZ &g, const ZZ &y){
+        std::string input= to_bin(g)+'*'+ to_bin(y);
+        return NextPrime(hash(input), NUM_TRIALS);
     }
 
 };
@@ -102,12 +173,12 @@ bool isPrime(const ZZ &n, int k) {
 }
 
 int main() {
-    std::cout<<"HI"<<std::endl;
     int k = 1024;
-    std::cout<<"HI"<<std::endl;
-    RSA_Group group(RandomPrime_ZZ(k, 50), RandomPrime_ZZ(k, 50));
-    std::cout<<"HI"<<std::endl;
-    ZZ g = RandomBits_ZZ(k);
+
+    RSA_Group group(k);
+
+    ZZ x = RandomBits_ZZ(k);
+    ZZ g = group.hash(to_bin(x));
     uint64_t time = 200;
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -120,7 +191,7 @@ int main() {
 
     t1 = std::chrono::high_resolution_clock::now();
 
-    ZZ s = group.sequential(g, time);
+    ZZ s = group.eval(g, time);
 
     std::cout << s << std::endl << std::endl;
 
@@ -131,6 +202,7 @@ int main() {
     t1 = std::chrono::high_resolution_clock::now();
 
     ZZ l = RandomPrime_ZZ(2 * k, 50);
+    l = group.hashprime(g, s);
 
     ZZ pi = group.genproof(g, ZZ(time), l);
     ZZ r = PowerMod(ZZ(2), ZZ(time), l);
