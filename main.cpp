@@ -4,11 +4,13 @@
 #include "NTL/ZZ.h"
 #include "NTL/ZZ_p.h"
 #include "bicycl.hpp"
-#include "XKCP/SimpleFIPS202.h"
 #include "openssl/evp.h"
 #include "openssl/sha.h"
 
 #define NUM_TRIALS 50
+#define SECURITY_PARAM 128
+#define NUM_LENGTH 1536
+
 
 using namespace NTL;
 using namespace BICYCL;
@@ -36,16 +38,15 @@ std::string to_bin(ZZ x) {
 class RSA_Group {
 
 public:
-    int k;
     ZZ p, q, N, fi;
 
 public:
 
-    RSA_Group(int k) {
-        this->k = k;
-        RandomPrime(this->p, k, NUM_TRIALS);
-        RandomPrime(this->q, k, NUM_TRIALS);
+    RSA_Group() {
+        RandomPrime(this->p, NUM_LENGTH, NUM_TRIALS);
+        RandomPrime(this->q, NUM_LENGTH, NUM_TRIALS);
         N = p * q;
+        ZZ_p::init(N);
         fi = (p - 1) * (q - 1);
     }
 
@@ -65,17 +66,18 @@ public:
     }
 
     ZZ hash(std::string x) {
-        /*
-        std::string bin = to_bin(x);
+
+        //std::string bin = to_bin(x);
+        std::string bin = "0110011001";
         const char *cstr = bin.c_str();
         const unsigned char *input = reinterpret_cast<unsigned char *>(const_cast<char *>(cstr));
         unsigned char output[32 + 1];
         SHA3_256(output, input, bin.length());
         output[32] = '\0';
         return to_int(std::string(reinterpret_cast<char *>(output)));
-         */
 
-        std::string input = "residue" + x;
+
+        /*std::string input = "residue" + x;
         uint32_t digest_length = SHA256_DIGEST_LENGTH;
         const EVP_MD *algorithm = EVP_sha3_256();
         auto *digest = static_cast<uint8_t *>(OPENSSL_malloc(digest_length));
@@ -86,7 +88,7 @@ public:
         EVP_MD_CTX_destroy(context);
         std::string output = to_str(digest, digest_length);
         OPENSSL_free(digest);
-        return to_int(output) % N;
+        return to_int(output) % N;*/
     }
 
     ZZ trapdoor(const ZZ &g, uint64_t t) const {
@@ -105,7 +107,7 @@ public:
         return y;
     }
 
-    ZZ trapdoorproof(const ZZ &g, const ZZ &t, const ZZ &l){
+    ZZ trapdoorproof(const ZZ &g, const ZZ &t, const ZZ &l) {
 
     }
 
@@ -114,8 +116,8 @@ public:
         return PowerMod(g, pow, N);
     }
 
-    ZZ hashprime(const ZZ &g, const ZZ &y){
-        std::string input= to_bin(g)+'*'+ to_bin(y);
+    ZZ hashprime(const ZZ &g, const ZZ &y) {
+        std::string input = to_bin(g) + '*' + to_bin(y);
         return NextPrime(hash(input), NUM_TRIALS);
     }
 
@@ -173,11 +175,10 @@ bool isPrime(const ZZ &n, int k) {
 }
 
 int main() {
-    int k = 1024;
 
-    RSA_Group group(k);
+    RSA_Group group;
 
-    ZZ x = RandomBits_ZZ(k);
+    ZZ x = RandomBits_ZZ(NUM_LENGTH);
     ZZ g = group.hash(to_bin(x));
     uint64_t time = 200;
 
@@ -201,7 +202,7 @@ int main() {
 
     t1 = std::chrono::high_resolution_clock::now();
 
-    ZZ l = RandomPrime_ZZ(2 * k, 50);
+    ZZ l = RandomPrime_ZZ(2 * NUM_LENGTH, 50);
     l = group.hashprime(g, s);
 
     ZZ pi = group.genproof(g, ZZ(time), l);
