@@ -78,7 +78,7 @@ namespace BICYCL
 
   class Mpz
   {
-    protected:
+    public:
       mpz_t mpz_;
   
     public:

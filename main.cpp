@@ -1,8 +1,8 @@
 #include <iostream>
 #include <cmath>
 #include <chrono>
+#include <iomanip>
 #include "NTL/ZZ.h"
-#include "NTL/ZZ_p.h"
 #include "bicycl.hpp"
 #include "openssl/evp.h"
 #include "openssl/sha.h"
@@ -11,29 +11,8 @@
 #define SECURITY_PARAM 128
 #define NUM_LENGTH 1536
 
-
 using namespace NTL;
 using namespace BICYCL;
-
-ZZ to_int(const std::string &x) {
-    ZZ res;
-    for (char c: x) {
-        res *= 2;
-        res += (c == '1') ? 1 : 0;
-    }
-    return res;
-}
-
-std::string to_bin(ZZ x) {
-    if (x == 0) return "0";
-    std::string res;
-    while (x > 0) {
-        res += (x % 2 == 1) ? '1' : '0';
-        x /= 2;
-    }
-    std::reverse(res.begin(), res.end());
-    return res;
-}
 
 class RSA_Group {
 
@@ -46,38 +25,31 @@ public:
         RandomPrime(this->p, NUM_LENGTH, NUM_TRIALS);
         RandomPrime(this->q, NUM_LENGTH, NUM_TRIALS);
         N = p * q;
-        ZZ_p::init(N);
         fi = (p - 1) * (q - 1);
     }
 
-    std::string to_str(uint8_t *start, int length) {
-        std::string res;
-        for (int i = 0; i < length; i++) {
-            uint8_t curr = start[i];
-            std::string s;
-            for (int j = 0; j < 8; j++) {
-                s += (curr % 2 == 1) ? '1' : '0';
-                curr /= 2;
-            }
-            std::reverse(s.begin(), s.end());
-            res += s;
-        }
-        return res;
+    ZZ bytes_to_ZZ(std::vector<uint8_t> bytes) {
+        std::reverse(bytes.begin(), bytes.end());
+        return ZZFromBytes(&bytes[0], bytes.size());
     }
 
-    ZZ hash(std::string x) {
+    std::vector<uint8_t> ZZ_to_bytes(const ZZ &x) {
+        long len = NumBytes(x);
+        std::vector<uint8_t> bytes(len);
+        BytesFromZZ(&bytes[0], x, len);
+        std::reverse(bytes.begin(), bytes.end());
+        return bytes;
+    }
 
-        //std::string bin = to_bin(x);
-        std::string bin = "0110011001";
-        const char *cstr = bin.c_str();
-        const unsigned char *input = reinterpret_cast<unsigned char *>(const_cast<char *>(cstr));
-        unsigned char output[32 + 1];
-        SHA3_256(output, input, bin.length());
-        output[32] = '\0';
-        return to_int(std::string(reinterpret_cast<char *>(output)));
+    std::string bytes_to_hex_string(const std::vector<uint8_t> &bytes) {
+        std::ostringstream stream;
+        for (uint8_t b: bytes) {
+            stream << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(b);
+        }
+        return stream.str();
+    }
 
-
-        /*std::string input = "residue" + x;
+    std::vector<uint8_t> SHA256(const std::string &input) {
         uint32_t digest_length = SHA256_DIGEST_LENGTH;
         const EVP_MD *algorithm = EVP_sha3_256();
         auto *digest = static_cast<uint8_t *>(OPENSSL_malloc(digest_length));
@@ -86,39 +58,59 @@ public:
         EVP_DigestUpdate(context, input.c_str(), input.size());
         EVP_DigestFinal_ex(context, digest, &digest_length);
         EVP_MD_CTX_destroy(context);
-        std::string output = to_str(digest, digest_length);
+        std::vector<uint8_t> bytes(digest, digest + digest_length);
         OPENSSL_free(digest);
-        return to_int(output) % N;*/
+        return bytes;
     }
 
-    ZZ trapdoor(const ZZ &g, uint64_t t) const {
-        ZZ two = ZZ(2);
-        ZZ zt = ZZ(t);
-        ZZ e = PowerMod(two, zt, fi);
+    ZZ hash(const ZZ &x) {
+        std::string input = "residue" + bytes_to_hex_string(ZZ_to_bytes(x));
+        return bytes_to_ZZ(SHA256(input)) % N;
+    }
+
+
+    ZZ trapdoor(const ZZ &g, long t) const {
+        ZZ e = PowerMod(ZZ(2), t, fi);
         return PowerMod(g, e, N);
     }
 
-    ZZ eval(const ZZ &g, uint64_t t) const {
-        ZZ y = g;
-        ZZ two = ZZ(2);
-        for (uint64_t i = 0; i < t; i++) {
-            y = PowerMod(y, two, N);
+    ZZ eval(const ZZ &g, long t) const {
+        ZZ e = power2_ZZ(t);
+        return PowerMod(g, e, N);
+    }
+
+    ZZ random_prime() {
+        return RandomPrime_ZZ(2 * (SECURITY_PARAM + 10), NUM_TRIALS);
+    }
+
+    ZZ noninteractive_prime(const ZZ &g, const ZZ &y) {
+        auto g_s = ZZ_to_bytes(g);
+        g_s.push_back('*');
+        auto y_s = ZZ_to_bytes(y);
+        g_s.insert(g_s.end(), y_s.begin(), y_s.end());
+        ZZ numeric = bytes_to_ZZ(g_s);
+        numeric = numeric % power2_ZZ(2 * (SECURITY_PARAM + 10));
+        return NextPrime(numeric, NUM_TRIALS);
+    }
+
+    ZZ trapdoor_proof(const ZZ &g, long t, const ZZ &l) {
+        ZZ e = (power2_ZZ(t) / l) % fi;
+        return PowerMod(g, e, N);
+    }
+
+    ZZ eval_proof(const ZZ &g, long t, const ZZ &l) const {
+        ZZ x(1);
+        ZZ r(1);
+        for (long i = 0; i < t; i++) {
+
         }
-        return y;
+        return x;
     }
 
-    ZZ trapdoorproof(const ZZ &g, const ZZ &t, const ZZ &l) {
-
-    }
-
-    ZZ genproof(const ZZ &g, const ZZ &t, const ZZ &l) const {
-        ZZ pow = (2 ^ t) / l;
-        return PowerMod(g, pow, N);
-    }
-
-    ZZ hashprime(const ZZ &g, const ZZ &y) {
-        std::string input = to_bin(g) + '*' + to_bin(y);
-        return NextPrime(hash(input), NUM_TRIALS);
+    bool verify(const ZZ &g, const ZZ &pi, const ZZ &l, const ZZ &r, const ZZ &y) {
+        ZZ fst = PowerMod(pi, l, N);
+        ZZ snd = PowerMod(g, r, N);
+        return MulMod(fst, snd, N) == y;
     }
 
 };
@@ -126,99 +118,74 @@ public:
 class Class_Group {
 
 public:
+    ClassGroup *cg;
+    Mpz disc;
 
-    ZZ generateD() {
-        ZZ d = -RandomPrime_ZZ(1024, 50);
-        while (d % 4 != 1) {
-            d = -RandomPrime_ZZ(1024, 50);
-        }
-        return d;
-    }
-
-    ZZ MinkowskiBound() {
-        ZZ delta = SqrRoot(-generateD());
-        ZZ bound = 2 * delta / M_PI;
-        return bound;
-    }
+public:
 
     Class_Group() {
-
+        RandGen r;
+        disc = r.random_negative_discriminant(NUM_LENGTH);
+        cg = new ClassGroup(disc);
     }
+
+    ~Class_Group() {
+        delete cg;
+    }
+
+    QFI eval(const QFI &g, long t) {
+        Mpz e;
+        mpz_ui_pow_ui(e.mpz_, 2, t);
+        QFI res;
+        cg->nupow(res, g, e);
+        return res;
+    }
+
 
 };
 
-bool isPrime(const ZZ &n, int k) {
+int main() {
+    Class_Group cg;
+    RandGen r;
+    QFI g = cg.cg->random(r);
 
-    if (n <= 1) return false;
-    if (n <= 3) return true;
+    while (true) {
 
-    ZZ d = n - 1;
-    int s = 0;
-    while ((d ^ 1) == 1) {
-        d >>= 1;
-        s++;
+        long n, b;
+        std::cin >> n;
+
+        auto t01 = std::chrono::high_resolution_clock::now();
+        std::cout << cg.eval(g, n) << std::endl;
+        auto t02 = std::chrono::high_resolution_clock::now();
+        auto m0s = std::chrono::duration_cast<std::chrono::milliseconds>(t02 - t01);
+        std::cout << m0s.count() << std::endl;
+
     }
-
-    for (int i = 0; i < k; i++) {
-        ZZ a = RandomBits_ZZ(1024) % (n - 3) + 2;
-        ZZ x = PowerMod(a, d, n);
-        if (x == 1 || x == n - 1) continue;
-        for (int j = 0; j < s - 1; j++) {
-            x = PowerMod(x, 2, n);
-            if (x == n - 1) goto end;
-        }
-        return false;
-        end:;
-    }
-    return true;
 
 }
 
-int main() {
+int main1() {
 
     RSA_Group group;
 
     ZZ x = RandomBits_ZZ(NUM_LENGTH);
-    ZZ g = group.hash(to_bin(x));
-    uint64_t time = 200;
+    ZZ g = group.hash(x);
+    long time = 2000000;
 
-    auto t1 = std::chrono::high_resolution_clock::now();
+    ZZ y = group.trapdoor(g, time);
+    std::cout << y << std::endl << std::endl;
 
-    std::cout << group.trapdoor(g, time) << std::endl << std::endl;
+    auto t01 = std::chrono::high_resolution_clock::now();
+    std::cout << group.eval(g, time) << std::endl << std::endl;
+    auto t02 = std::chrono::high_resolution_clock::now();
+    auto m0s = std::chrono::duration_cast<std::chrono::milliseconds>(t02 - t01);
+    std::cout << m0s.count() << std::endl;
 
-    auto t2 = std::chrono::high_resolution_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-    std::cout << ms.count() << std::endl;
+    ZZ l = group.random_prime();
 
-    t1 = std::chrono::high_resolution_clock::now();
-
-    ZZ s = group.eval(g, time);
-
-    std::cout << s << std::endl << std::endl;
-
-    t2 = std::chrono::high_resolution_clock::now();
-    ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-    std::cout << ms.count() << std::endl;
-
-    t1 = std::chrono::high_resolution_clock::now();
-
-    ZZ l = RandomPrime_ZZ(2 * NUM_LENGTH, 50);
-    l = group.hashprime(g, s);
-
-    ZZ pi = group.genproof(g, ZZ(time), l);
-    ZZ r = PowerMod(ZZ(2), ZZ(time), l);
-
-    ZZ first = PowerMod(pi, l, group.N);
-    ZZ second = PowerMod(g, r, group.N);
-    ZZ mul = MulMod(first, second, group.N);
-
-    bool eq = (mul == s);
-
-    std::cout << (eq ? "Verified" : "Failed") << std::endl << std::endl;
-
-    t2 = std::chrono::high_resolution_clock::now();
-    ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1);
-    std::cout << ms.count() << std::endl;
+    ZZ pi = group.trapdoor_proof(g, time, l);
+    ZZ r = PowerMod(ZZ(2), time, l);
+    std::cout << group.verify(g, pi, l, r, y) << std::endl;
 
     return 0;
 }
