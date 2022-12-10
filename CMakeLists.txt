@@ -18,3 +18,6 @@ add_subdirectory(bicycl)
 target_link_libraries(${PROJECT_NAME} ntl)
 target_link_libraries(${PROJECT_NAME} bicycl)
 target_link_libraries(${PROJECT_NAME} OpenSSL::Crypto)
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX)
