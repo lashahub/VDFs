@@ -341,10 +341,15 @@ public:
     }
 
     std::pair<QFI, QFI> eval(const QFI &g, long t, const ZZ &l) {
+
+        auto t01 = std::chrono::high_resolution_clock::now();
         Mpz e;
         mpz_ui_pow_ui(e.mpz_, 2, t);
         QFI y;
         cg->nupow(y, g, e);
+        auto t02 = std::chrono::high_resolution_clock::now();
+        auto m0s = std::chrono::duration_cast<std::chrono::milliseconds>(t02 - t01);
+        std::cout << m0s.count() << std::endl;
 
         ZZ e1 = power2_ZZ(t) / l;
         Mpz em = ZZ_to_mpz(e1);
@@ -376,12 +381,12 @@ public:
 
 };
 
-int main() {
+int main_class_groups() {
     Class_Group cg;
     RandGen r;
     QFI g = cg.cg->random(r);
 
-    long time = 500000;
+    long time = 2000000;
 
     auto t01 = std::chrono::high_resolution_clock::now();
     ZZ l = cg.random_prime();
@@ -395,12 +400,12 @@ int main() {
 
 }
 
-int main_rsa() {
+int main() {
 
     RSA_Group group;
 
     ZZ x = RandomBits_ZZ(2 * NUM_LENGTH);
-    long time = 500000;
+    long time = 2000000;
 
     //////////////////////////////////////////////////////////////////////////////
 
@@ -418,26 +423,26 @@ int main_rsa() {
     //////////////////////////////////////////////////////////////////////////////
 
     t01 = std::chrono::high_resolution_clock::now();
-    auto asdd = group.eval(x, time);
+    res = group.eval(x, time);
     t02 = std::chrono::high_resolution_clock::now();
     m0s = std::chrono::duration_cast<std::chrono::milliseconds>(t02 - t01);
     std::cout << m0s.count() << std::endl << std::endl;
-    std::cout << asdd.first << std::endl;
-    std::cout << asdd.second << std::endl;
-    std::cout << (group.verify(x, asdd.first, asdd.second, time) ? "Verified" : "Failed") << std::endl;
+    std::cout << res.first << std::endl;
+    std::cout << res.second << std::endl;
+    std::cout << (group.verify(x, res.first, res.second, time) ? "Verified" : "Failed") << std::endl;
 
     //////////////////////////////////////////////////////////////////////////////
 
     //////////////////////////////////////////////////////////////////////////////
 
     t01 = std::chrono::high_resolution_clock::now();
-    auto asd = group.eval_fast(x, time);
+    res = group.eval_fast(x, time);
     t02 = std::chrono::high_resolution_clock::now();
     m0s = std::chrono::duration_cast<std::chrono::milliseconds>(t02 - t01);
     std::cout << m0s.count() << std::endl;
-    std::cout << asd.first << std::endl;
-    std::cout << asd.second << std::endl;
-    std::cout << (group.verify(x, asd.first, asd.second, time) ? "Verified" : "Failed") << std::endl;
+    std::cout << res.first << std::endl;
+    std::cout << res.second << std::endl;
+    std::cout << (group.verify(x, res.first, res.second, time) ? "Verified" : "Failed") << std::endl;
 
     //////////////////////////////////////////////////////////////////////////////
 
